@@ -1,0 +1,88 @@
+select * from merged_series_data ORDER BY Votes desc, Rating desc;
+
+---Cleaning data
+--checking unwanted rows 
+select * from merged_series_data where 'Year' = "year";
+
+--removing unwanted rows
+delete from merged_series_data
+where 'Year' = "year";
+
+--Updating encoded character with -
+UPDATE merged_series_data
+SET Year = REPLACE(Year, '–', '-');
+
+--removing ( and ) from year column
+UPDATE merged_series_data
+SET Year = REPLACE(REPLACE(Year, '(', ''), ')', '');
+
+--cleaning column Year
+--removing unnecessary characters from year, ex: "iI 2022"
+update merged_series_data
+set Year = SUBSTRING(Year, CHARINDEX(' ', Year)+1, Len(Year)) 
+where CHARINDEX('-', Year)=0 and Year != 'None' and (CHARINDEX('2', Year)!=0 or CHARINDEX('1', Year)!=0) and CHARINDEX(' ', Year)!=0;
+
+update merged_series_data
+set Year = TRIM(REPLACE(REPLACE(Year, 'V', ''), 'I', ''))
+where (CHARINDEX('I', Year)!=0 or CHARINDEX('V', Year)!=0);
+
+update merged_series_data
+set Year = REPLACE(Year, 'None', '')
+where Year='None';
+
+--removing duplicates
+with dup as (
+select *, ROW_NUMBER() over (partition by Title, Trim(Year), Runtime ORDER BY Votes desc) row_num from merged_series_data)
+delete FROM dup where row_num > 1;
+
+--checking for null or empty rows in year
+delete from merged_series_data where Year is null
+select * from merged_series_data where ((Year is null) or Year = '') order by Votes desc
+
+
+---Feature engineering
+--dividing year into start_year and end_year
+ALTER TABLE merged_series_data
+add [end_year] varchar(50);
+
+select * from merged_series_data;
+
+update merged_series_data
+set start_year = SUBSTRING(Year, 
+case when CHARINDEX('-', Year)=1 then 2
+else 1 end, 
+case when CHARINDEX('-', Year)=0 then LEN(Year)
+when CHARINDEX('-', Year)=1 then LEN(Year)
+else charindex('-', Year)-1 end)
+
+update merged_series_data
+set end_year = SUBSTRING(Year, 
+case when CHARINDEX('-', Year)=0 then 0
+when CHARINDEX('-', Year)=Len(Year) then 1
+else CHARINDEX('-', Year)+1 end, 
+case when CHARINDEX('-', Year)=0 then 0
+when CHARINDEX('-', Year)=Len(Year) then Len(Year)-1
+else LEN(Year) end)
+
+update merged_series_data
+set start_year = ''
+where LEN(start_year)!=4 and Len(start_year)!=0;
+
+select * from merged_series_data;
+
+--creating individual columns for each genre
+--superhero, action, adventure, animation, biography, comedy, crime, documentary, drama, family, fantasy, game-show, history, horror, music, musical, mystery, news, reality-tv, romance, sci-fi, sport, talk-show, thriller, war, western
+select distinct(Genre) from merged_series_data where (LEN(Genre)-LEN(REPLACE(Genre, ',', ''))) >= 2
+
+alter TABLE merged_series_data
+add [short] integer
+
+update merged_series_data
+set short = case when LOWER(Genre) LIKE '%short%' then 1 else 0 end
+
+
+--checking runtime column
+select * from merged_series_data
+
+update merged_series_data
+set Runtime = REPLACE(Runtime, 'min', '')
